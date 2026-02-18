@@ -1,0 +1,22 @@
+<h2>All Resumes</h2>
+
+<table border="1">
+<tr>
+  <th>Name</th>
+  <th>Email</th>
+  <th>Phone</th>
+  <th>Skills</th>
+</tr>
+
+{% for r in data %}
+<tr>
+  <td>{{ r[0] }}</td>
+  <td>{{ r[1] }}</td>
+  <td>{{ r[2] }}</td>
+  <td>{{ r[3] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<br>
+<a href="/upload">Back</a>

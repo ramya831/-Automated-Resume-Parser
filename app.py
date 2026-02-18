@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 import psycopg2
 import pdfplumber
+import docx
 import os
 import re
 
@@ -10,16 +11,25 @@ app.secret_key = "secret123"
 # ---------- UPLOAD FOLDER ----------
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# ---------- ALLOWED FILE TYPES ----------
+ALLOWED_EXTENSIONS = {"pdf", "docx"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 # ---------- DATABASE CONNECTION ----------
 conn = psycopg2.connect(
     dbname="resume_db",
     user="postgres",
-    password="lucky04",   # change if your password is different
+    password="lucky04",  # change if needed
     host="localhost",
     port="5432"
 )
 cur = conn.cursor()
+
 
 # ---------- LOGIN ----------
 @app.route("/", methods=["GET", "POST"])
@@ -36,6 +46,31 @@ def login():
 
     return render_template("login.html")
 
+
+# ---------- TEXT EXTRACTION FUNCTION ----------
+def extract_text(filepath):
+    text = ""
+    ext = os.path.splitext(filepath)[1].lower()
+
+    try:
+        # ---------- PDF ----------
+        if ext == ".pdf":
+            with pdfplumber.open(filepath) as pdf:
+                for page in pdf.pages:
+                    text += page.extract_text() or ""
+
+        # ---------- DOCX ----------
+        elif ext == ".docx":
+            doc = docx.Document(filepath)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+
+    except Exception as e:
+        print("Error reading file:", e)
+
+    return text
+
+
 # ---------- UPLOAD & PARSE RESUME ----------
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
@@ -45,17 +80,17 @@ def upload():
     if request.method == "POST":
         file = request.files["resume"]
 
-        if file:
-            filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        if file and allowed_file(file.filename):
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
             file.save(filepath)
 
             # ---------- EXTRACT TEXT ----------
-            text = ""
-            with pdfplumber.open(filepath) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
+            text = extract_text(filepath)
 
-            # ---------- NAME EXTRACTION (FIXED) ----------
+            if not text:
+                return "Could not extract text from file."
+
+            # ---------- NAME ----------
             lines = [line.strip() for line in text.split("\n") if line.strip()]
             name = ""
 
@@ -104,7 +139,11 @@ def upload():
 
             return redirect(url_for("resumes"))
 
+        else:
+            return "Only PDF and DOCX files are allowed!"
+
     return render_template("upload.html")
+
 
 # ---------- VIEW ALL RESUMES ----------
 @app.route("/resumes")
@@ -116,11 +155,14 @@ def resumes():
     data = cur.fetchall()
     return render_template("resumes.html", data=data)
 
+
 # ---------- LOGOUT ----------
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/")
 
+
 if __name__ == "__main__":
     app.run(debug=True)
+
